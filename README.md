@@ -3,7 +3,6 @@
 This project is an elaboration of an assignment from the Open University, with the aim of investigating the tuning of parameters for a PID controller in a structured way.
 We have taken J. Spielmann's PID controller (https://gitlab.com/jspielmann/shippid/) as a starting point.
 
-
 # Simulation
 
 In `params.py` we defined a class GameParameters which can contain al the varied parameters
@@ -206,7 +205,7 @@ For task 5 we created the following functions:
             fig_change_1par(linrange,tEQ,var1.var,sigma)             
 
 
-Here we use numpy to easily obtain testing-intervals. Drawing the figures is done in the following function, againg using matplotlib.
+Here we use numpy to easily obtain testing-intervals. Drawing the figures is done in the following function, again using matplotlib.
 
     def fig_change_1par(x,y,par,sigma):   
             fs = 55
@@ -322,7 +321,6 @@ Similarly, we have created a function where two parameters can be varied at the 
 
 Drawing the figures is done with a colorbar chart, provided in matplotlib. 
 
-
     def fig_change_2par(x,y,z,par1,par2,sigma): 
         Y,X = np.meshgrid(y,x)
         fs = 55
@@ -348,7 +346,7 @@ By allowing sigma as parameter, all these functions could serve for task 7 as we
 
 ## Task 6
 
-We created the runVraag6 function to generate figures while running the simulation with applying noise. Here we reused the fig_basius function
+We created the runVraag6 function to generate figures while running the simulation with applying noise. Here we reused the fig_basis function
 
     def runVraag6():
         """
