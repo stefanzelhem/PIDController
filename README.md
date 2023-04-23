@@ -1,328 +1,377 @@
-# PID in a nutshell
+# Introduction
 
-This is a testbed for control-theory applications: try to steer the ship to the center
-of the screen, then write a program that does that.
+This project is an elaboration of an assignment from the Open University, with the aim of investigating the tuning of parameters for a PID controller in a structured way.
+We have taken J. Spielmann's PID controller (https://gitlab.com/jspielmann/shippid/) as a starting point.
 
-# The story
 
-**You'll note that this isn't finished yet...**
+# Simulation
 
-(see below for some explanations on maths, dependencies and internals)
+In `params.py` we defined a class GameParameters which can contain al the varied parameters
 
-When you start the `game.py` (after installing everything), you will have a simple game that you can play with your
-arrow keys: press left to accelerate the ship left, press right to accelerate the ship right. The goal is simple: park 
-the ship at the center line of the screen. If that ship is a solar probe, you'd essentially be a
-[solar probe parker](https://de.wikipedia.org/wiki/Parker_Solar_Probe).
+class GameParameters:
+      def __init__(self, p_factor,d_factor,i_factor,i_weight,sigma=0.0):
+          self.p_factor=p_factor
+          self.d_factor=d_factor
+          self.i_factor=i_factor
+          self.i_weight=i_weight
+          self.sigma=sigma
 
-*screenshot*
+We use these parameters in the altered Driver class (`driver.py`), to perform a simulation-iteration with application of these parameters.
 
-That's pretty easy, right? Just some power to the right, then braking it down, maybe some fine adjustment, done. There's
-no friction in space, so you have to stop and fine-adjust yourself, but apart from that: EASY!
-
-*screenshot*
-
-Now let's write a program to do the same thing. Some terms&conditions first.
-
-*screenshot*: coordinate system, variable names etc
-
-Here, the ship starts at position `ship.x == -1`, the goal is at position `x == 0` and the graphic at the top of the 
-creen spans the range from -1 to +1 (and a little more). There are three diagrams on the screen: one for `X`, which is
-the ships position (try to get that to a zero-line!), one for `T`, which is the thrust applied to the ship and one for
-`V`, which is the velocity of the ship. With your arrow keys, you can only apply maximum thrust in either direction, but
-our robotic pilot will be guiding the ship much more finely.
-
-Writing a program to control the ship turns out to be much harder than doing it manually, because teaching a computer to
-predict where the ship
-is going to be and how it's going to react to some inputs is not obvious. The basic problem here is that we do
-not control the ship's position directly. In fact, we don't even control the speed of the ship directly, instead we
-control the thrust that is applied, or the acceleration. This is also called the second derivative of the position, see
-below for the terms if you're unfamiliar with that.
-
-But, for the moment, let's assume we can control position directly, and use position
-as a direct input. Open the file `driver.py` and scroll down to the function `get_inputs`, which should look like this:
-
-    def get_inputs(self, ct):
-
-        return {
-        }
-
-As you can see, no inputs are given and the ship stays in place when the game starts (press `R` to reset the game back
-to the start).
-
-As we said, let's try to just _use_ the position as an input. It sounds reasonable, right? The further away from the
-goal we are, the harder we need to push. Since this input is _proportional_ to the error, let's call it `p`. So let's
-try it and see what happens. By the way, you can simply edit that file and save it, the game will automatically reload
-your code every time it changes (see the section below for more information). Anyway, here's the code:
-
-    def get_inputs(self, ct):
-
-        return {
-            'p': self.ship.x,
-        }
-
-What happens is this:
-
-*gif of ship flying off*
-
-Uh, well, looks like we pushed in the wrong direction. Let's fix it by flipping the sign:
-
-    def get_inputs(self, ct):
-
-        return {
-            'p': -1 * self.ship.x,
-        }
-
-*gif of ship oscillating*
-
-Well, that starts off very promising! Then it overshoots. Then it comes back. Then it ends up _exactly_ where it
-started. Ok, alright, so, _on average_ we've moved the ship to the center, but now we're just swinging around the goal.
-The problem here is that we keep pushing until we actually reach the goal, and then (since there's no friction)
-overshooting by the exact same amount that we started with.
-
-We need to brake the ship earlier. But how do we know when to brake?
-
-What about this: when our ship is moving in the "right direction", let's ease off the gas a little. How do we know when
-we are moving in the right direction? Well, the derivative of the ship's position is exactly that (see below if you're
-unsure). So let's use that. Calculating the derivative in a discrete system like this is easy (see below), so here's
-what that code looks like.
-
-    def get_inputs(self, ct):
-
-        # do not forget to initialize self.last_x = 0 in the constructor!
-        derivative = self.ship.x - self.last_x
-        self.last_x = self.ship.x
-
-        return {
-            'p': -1 * self.ship.x,
-            'd': -1 * derivative,
-        }
-
-*gif of very slow approximation*
-
-Well, that didn't help very much. But if you look _very_ closely, you'll see that it did help. Let's crank up the
-derivative much higher and see what happens:
-
-    def get_inputs(self, ct):
-
-        # do not forget to initialize self.last_x = 0 in the constructor!
-        derivative = self.ship.x - self.last_x
-        self.last_x = self.ship.x
-
-        return {
-            'p': -1 * self.ship.x,
-            'd': -200 * derivative,
-        }
-
-Note: the `p` and `d` variables are simply added up to determine the applied thrust. You could add them yourself, but
-then you wouldn't get a nice little diagram at the bottom and would find it harder to debug what happens.
-
-*gif of slow approximation*
-
-Wow, that's great! It did exactly what we wanted: Pushed to the right, then slowly braked into the center. Amazing, how
-we found the perfect combination of factors right away!
-
-It's a little slow, though. So let's increase the speed a little bit:
-
-    def get_inputs(self, ct):
+    def tick(self, ct, parameters : GameParameters):
+        Kp=parameters.p_factor
+        Kd=parameters.d_factor
+        Ki=parameters.i_factor
+        Integraal_Factor=parameters.i_weight
 
         derivative = self.ship.x - self.last_x
         self.last_x = self.ship.x
+        self.i = self.i + Integraal_Factor * self.ship.x
+        return -5*(Kp*self.ship.x+Kd * derivative+Ki * self.i)
 
-        return {
-            'factor': -10,
-            'p': self.ship.x,
-            'd': 60 * derivative,
-        }
+The Driver.tick function is called from MyGame.tick (`game.py`) which we changed to just run the simulation
 
-The `factor` is simply multiplied to the resulting throttle, so we can more easily scale the variables (and take that
-silly `-1` out of there). This is how it looks:
+    def tick(self, parameters):
+        self.ct += 1
 
-*gif of super-good approximation*
+        thrust = self.driver.tick(self.ct,parameters)
+        self.ship.control = thrust
+        self.ship.tick(self.ct,parameters)
 
-Now _that's_ crazy-good. It parks like a pro: lot's of power at the beginning, nice and smooth breaking at the end.
+This function is called in on_update, which we changed to pass the parameters
+
+You will notice that we also pass the parameters to ship.tick. This is only used for applying the noise (`ship.py`):
+
+        if(parameters.sigma!=0): 
+            offset=random.gauss(0,parameters.sigma)
+            self.x +=offset
+
+In `game.py` we also updated the run-function, to allow for 20000 iterations, capturing the results in a timeseries array and to check if and when the simulation has reached equilibrium.
+
+    def run(game,par : GameParameters):
+        " Stop run if equilibrium has reached, or after 20000 iterations "
+        i = 0
+        game.parameters = par
+        maxIter=20000
+
+        while ((game.ship.EQ < 1 or game.parameters.sigma>0) and i < maxIter):
+            i += 1        
+            game.perform_1_iteration(game.parameters)
+
+        game.reach_equilibrium()
+        gs = game.ship
+        timeseries = pd.DataFrame({'time':gs.tAll,'x':gs.xAll,'v':list(np.array(gs.vAll) / TIME_FACTOR)})
+        if type(gs.tEQ) == float:
+            return [timeseries,gs.tEQ]
+        else:
+            return [timeseries,math.nan]   
+
+The data for the timeseries is declared in the __init__ function of `ship.py` 
+
+            self.xAll = [-1]
+            self.vAll = [0]
+            self.t = 0
+            self.tAll = [0]
+            self.EQ = 0
+            self.tEQ = []
+
+In `game.py` we build a function to perform one iteration of the simulation. Here we also capture the relevant data in the timeseries arrays
+
+    def perform_1_iteration(self,parameters):
+        """
+        Play 1 iteration and plot x,v and t as timeseries
+        """
+        self.tick(parameters)
+        self.ship.xAll.append(self.ship.x)
+        self.ship.vAll.append(self.ship.speed)
+        self.ship.t += TIME_FACTOR
+        self.ship.tAll.append(self.ship.t)
+
+Here we also defined a function to determine if an equilibrium has been reached, simply by checking if from some point in the timeseries the position doesn't deviate 5% from the targetvalue of 0. 
+
+    def reach_equilibrium(self):
+        # print(len(self.ship.xAll))
+      
+        eqWaarde=999
+        index=0
+        for i in range(len(self.ship.xAll)-1,0,-1):
+            if(abs(self.ship.xAll[i]) < 0.05):
+                eqWaarde=self.ship.xAll[i]
+            else:
+                index=i
+                break
+
+        if(eqWaarde!=999):
+            self.ship.EQ = 1
+            self.ship.tEQ = self.ship.tAll[index]              
+
+# Reporting
+
+For running the simulations, we build specific functions in `game.py`
+
+## Task 2
+
+    def runVraag2():
+        """
+        Question 2: Manually adapt parameters
+        """
+        print('Run and plot some random runs')
+        pars=[GameParameters(1,60,0.0025,0.2),GameParameters(1,0,0,0.2),GameParameters(1,60,0,0),GameParameters(0.6,60,0.0025,0.2),GameParameters(5,200,0.0005,0.1),GameParameters(1,60,1,0.2)]
+        iter=1
+        for par in pars:
+            spel=run(game,par)
+            reset(game)
+            fig_basis(spel[0],spel[1],par,iter)
+            iter+=1
 
 
-## Why does this work?
+For this task, we defined GameParameters for a number of parameters which we chose. We run the simulation with these parameters, capture the data in spel, and pass this to the fig_basis function.
 
-So what's happening here is a _linear forecast_. We built a system that looks into the future under the assumption that
-everything is linear. The position can then be calculated as:
+    def fig_basis(ts,tEQ,par,volgnummer):   
+        "Plot random runs"
+        fs = 55
+        fig = plt.figure(figsize=(27.5,13.5))
+        if(par.sigma==0):
+            ax1 = fig.add_axes([.12,.15, .85, .82])            
+        else:
+            ax1 = fig.add_axes([.12,.15, .85, .72])            
+        ax1.plot(ts['time'],ts['x'],label='x-position',linewidth=3)
+        ax1.plot(ts['time'],ts['v'],label='v-speed',linewidth=3)  
+        ax1.plot([0,ts['time'].iloc[-1]],[0,0],label='Centre',linestyle='--',color='black',linewidth=3)
+        if type(tEQ) == float:
+            ax1.plot([tEQ,tEQ],[-1,1],label='Centre reached (5%)',linewidth=3)    
+        ax1.set_xlabel('Time',fontsize=fs)
+        ax1.set_ylabel('x and v',fontsize=fs)
+        ax1.tick_params(axis='x',labelsize=fs)
+        ax1.tick_params(axis='y',labelsize=fs)
+        ax1.legend(fontsize=fs-10)   
+        if np.isnan(tEQ):
+            ax1.set_xlim(0,ts['time'].iloc[-1])
+        else:
+            ax1.set_xlim(0,tEQ+2)
 
-    x(t + d) = x(t) + d * x'(t)
+        if(par.sigma!=0):
+            ax1.set_xlim(0,330)
+            if(par.sigma<0.0027):
+                ax1.set_xlim(0,50)
+
+        ax1.grid()
+        if(par.sigma==0):
+            filenaam="figuren\\basis {0}.png".format(volgnummer)
+        else:
+            filenaam="figuren\\gaussian noise {0}.png".format(volgnummer)
+            ax1.set_title('Sigma: {0}'.format(par.sigma),fontsize=fs)  
+
+        if os.path.exists(filenaam):
+            os.remove(filenaam)
+        fig.savefig(filenaam)
+        plt.close(fig)
+
+## Task 5
+
+Here we used the matplotlib to plot the results. 
+
+For task 5 we created the following functions:
+
+    def runVraag5a(sigma=0):
+        """
+        Question 5a: tEQ as function of 1 parameter
+        """
+        print('Run and plot 1 varying parameter')
+        
+        var1pars=[Var1Pars(0,6,31,'Kp'),Var1Pars(0,240,31,'Kd'),Var1Pars(0.0005,0.02,28,'Ki'),Var1Pars(0.04,0.4,28,'Kint')]
+        pars=GameParameters(1,60,0.0025,0.2,sigma)
+      
+        for var1 in var1pars:
+            linrange = np.linspace(var1.start,var1.stop,var1.num)
+            tEQ = [math.nan] * len(linrange)
+            SpelAll = [math.nan] * len(linrange)
+            parcopy=copy.deepcopy(pars)
+            for ii in np.arange(0,len(linrange)):
+                if var1.var=='Kp':
+                    parcopy.p_factor=linrange[ii]
+                elif var1.var=='Kd':
+                    parcopy.d_factor=linrange[ii]
+                elif var1.var=='Ki':
+                    parcopy.i_factor=linrange[ii]
+                elif var1.var=='Kint':
+                    parcopy.i_weight=linrange[ii]
+                spel = run(game,parcopy)
+                SpelAll[ii] = spel[0]
+                if type(spel[1]) == float:
+                    tEQ[ii] = spel[1] 
+                reset(game)
+            
+            fig_xt_change_1par_refactor(SpelAll,linrange,var1.var,4,len(linrange))
+            fig_change_1par(linrange,tEQ,var1.var,sigma)             
+
+
+Here we use numpy to easily obtain testing-intervals. Drawing the figures is done in the following function, againg using matplotlib.
+
+    def fig_change_1par(x,y,par,sigma):   
+            fs = 55
+            fig = plt.figure(figsize=(27.5,13.5))
+            ax1 = fig.add_axes([.12,.15, .83, .72])             
+            ax1.plot(x,y,linewidth=3)
+            ax1.set_title('Varying {0} - sigma={1}'.format(par,sigma),fontsize=fs)   
+            ax1.tick_params(axis='x',labelsize=fs)
+            ax1.tick_params(axis='y',labelsize=fs)
+            ax1.set_xlabel(par,fontsize=fs)
+            ax1.set_ylabel('time',fontsize=fs)
+            if par == 'Ki':
+                ax1.tick_params(axis='x',labelsize=fs-10)
+            else:
+                ax1.tick_params(axis='x',labelsize=fs)
+            ax1.tick_params(axis='y',labelsize=fs)
+            ax1.grid()
+            if sigma==0:
+                ax1.set_ylim(0,30)
+            else:
+                ax1.set_ylim(0,60)
+
+            fig.savefig("figuren\\1 par {0} sigma {1}".format(par,str(sigma).replace('.',',')))
+            plt.close(fig)
+
+Similarly, we have created a function where two parameters can be varied at the same time.
     
-The predicted position will probably be inaccurate, but that doesn't matter too much, as long as it's good enough.
+       
+    def runVraag5b(sigma=0):
+        """
+        Question 5b: tEQ as function of 2 parameters
+        """
+        print('Run and plot 2 varying parameters: 1/6')
 
-We also have a factor `factor` in our system above. This factor encapsulates _how_ we should react to the linear
-prediction. It tells us how strong we need to push the throttle for a given error. Our throttle maxes out at `T = 1`, so
-that factor just makes the "interesting control interval" smaller. You can play with that factor and see how it changes
-things. A small value will make the approximation more "cautious" and more accurate, while a larger factor will make it
-quicker but less accurate. For small factors you'll also need to crank up the "foresight" value, ie. scale `d` higher.
-This dampens the system stronger and makes it converge quicker.
-
-
-## Problems: solar wind
-
-But there's a problem: our parking space is close to the local star, which sends out enormous quantities of solar wind.
-Press `S` to start the solar wind simulation.
-
-What happens is this:
-
-*gif of ship struggling to keep up*
-
-The solar wind adds a _constant_ pressure to the system that results in a steady state of _wrong parking_. We need to
-add something to the system that can deal with constant deviations.
-
-What we're going to do is that we're going to measure how long we've been deviating and by how much, and apply a very
-small push in the opposite direction. Essentially, we're integrating over the error (see below). For this, we need
-another variable, but then integration in our step-wise system is easy:
-
-    def get_inputs(self, ct):
-
-        derivative = self.ship.x - self.last_x
-        self.last_x = self.ship.x
-        self.i = self.i + 0.2 * self.ship.x
-
-        return {
-            'factor': -5,
-            'p': 1 * self.ship.x,
-            'd': 60 * derivative,
-            'i': 0.0025 * self.i,
-        }
-
-*gif of ship perfectly parking against solar wind, then keeping it up*
-
-Perfect! Again, we found the correct strength factors without any trials, amazing! What happens here is that the
-controller notices that _it stays on the same wrong side for too long_ and applies a thrust value that is proportional
-to that ongoing error.
-
-The `i` parameter is the most tricky one: turn it up too high and you'll overshoot very much, turn it too low and it'll
-not converge quickly. What's usually done is to either clamp the value of the parameter or deactivate it when the ship
-is too far away from the goal value.
-
-Now that's a very stable system. Try turning off the solar wind or pushing the ship around with the arrow keys, and
-it'll always park back at the center. Not always super quick, but it'll be close very quickly and converge inwards
-always.
-
-Play around with it and try to make it even better!
-
-
-## Some background
-
-What we wrote here is a so-called [PID controller](https://en.wikipedia.org/wiki/PID_controller), which is the
-most-widely used technique for indirectly controlling a value. There is lots of literature on how to make them suitable
-for all kinds of situations and for finding the parameter factors.
-
-Go and play with it!
-
-
-# Getting started
-
-## Dependencies
-
-The only direct dependency for this project is `arcade`, which allows us to draw to
-the screen and interact with the user. Install it using
-
-    pip install -r requirements.txt
+        resolutieFactor=6
+            # " Varying Kp"
+        p_range = np.linspace(0,6,31*resolutieFactor)
+        d_range = np.linspace(0,240,31*resolutieFactor)
+        i_range = np.linspace(0.0005,0.02,28*resolutieFactor)
+        int_range = np.linspace(0.04,0.4,28*resolutieFactor)
     
-and you should be good to go.
+        p_d_tEQ = np.empty((len(p_range),len(d_range)))*np.nan
+        for ii in np.arange(0,len(p_range)):
+            for jj in np.arange(0,len(d_range)):
+                print("ii {0}: jj {1}".format(ii,jj))
+                Spel0 = run(game,GameParameters(p_range[ii],d_range[jj],0.0025,0.2,sigma))
+                if type(Spel0[1]) == float:
+                    p_d_tEQ[ii,jj] = Spel0[1]
+                reset(game)
 
-## Reloadable
+        fig_change_2par(p_range,d_range,p_d_tEQ,'Kp','Kd',sigma)
+                
+        print('Run and plot 2 varying parameters: 2/6')
+        p_i_tEQ = np.empty((len(p_range),len(i_range)))*np.nan
+        for ii in np.arange(0,len(p_range)):
+            print(ii)
+            for jj in np.arange(0,len(i_range)):
+                print(str(ii),str(jj))
+                Spel0 = run(game,GameParameters(p_range[ii],60,i_range[jj],0.2,sigma))
+                if type(Spel0[1]) == float:
+                    p_i_tEQ[ii,jj] = Spel0[1]
+                reset(game)
+        
+        fig_change_2par(p_range,i_range,p_i_tEQ,'Kp','Ki',sigma)
 
-The file `reloadably.py` contains a class `Reloadable` that implements an interface
-for allowing live-reloading of code in a running program. To do so, a subclass of
-`Reloadable` must define all variables that it wants serialized during a reload in
-the variable `serialize_vars`.
+        print('Run and plot 2 varying parameters: 3/6')
+        p_int_tEQ = np.empty((len(p_range),len(int_range)))*np.nan
+        for ii in np.arange(0,len(p_range)):
+            for jj in np.arange(0,len(int_range)):
+                print(str(ii),str(jj))
+                Spel0 = run(game,GameParameters(p_range[ii],60,0.0025,int_range[jj],sigma))
+                if type(Spel0[1]) == float:
+                    p_int_tEQ[ii,jj] = Spel0[1]
+                reset(game)
 
-The most visible use of `Reloadable` is in the `Driver` class, which implements a
-virtual pilot. This means you can start the game with
+        fig_change_2par(p_range,int_range,p_int_tEQ,'Kp','Kint',sigma)
+        
+        print('Run and plot 2 varying parameters: 4/6')
+        d_i_tEQ = np.empty((len(d_range),len(i_range)))*np.nan
+        for ii in np.arange(0,len(d_range)):
+            for jj in np.arange(0,len(i_range)):
+                print(str(ii),str(jj))
+                Spel0 = run(game,GameParameters(1,d_range[ii],i_range[jj],0.2,sigma))
+                if type(Spel0[1]) == float:
+                    d_i_tEQ[ii,jj] = Spel0[1]
+                reset(game)
+                
+        fig_change_2par(d_range,i_range,d_i_tEQ,'Kd','Ki',sigma)
 
-    python game.py
-    
-then edit `driver.py` to suit your needs and the driver will be automatically reloaded
-every time you save the file. For even more convenience, the game will reset every
-time the driver is reloaded, so each driver starts from the same position.
+        print('Run and plot 2 varying parameters: 5/6')
+        d_int_tEQ = np.empty((len(d_range),len(int_range)))*np.nan
+        for ii in np.arange(0,len(d_range)):
+            for jj in np.arange(0,len(int_range)):
+                print(str(ii),str(jj))
+                Spel0 = run(game,GameParameters(1,d_range[ii],0.0025,int_range[jj],sigma))
+                if type(Spel0[1]) == float:
+                    d_int_tEQ[ii,jj] = Spel0[1]
+                reset(game)
 
+        fig_change_2par(d_range,int_range,d_int_tEQ,'Kd','Kint',sigma)
 
-# Some maths background
+        print('Run and plot 2 varying parameters: 6/6')
+        i_int_tEQ = np.empty((len(i_range),len(int_range)))*np.nan
+        for ii in np.arange(0,len(i_range)):
+            for jj in np.arange(0,len(int_range)):
+                print(str(ii),str(jj))
+                Spel0 = run(game,GameParameters(1,60,i_range[ii],int_range[jj],sigma))
+                if type(Spel0[1]) == float:
+                    i_int_tEQ[ii,jj] = Spel0[1]
+                reset(game)
 
-We need some words for the discussion above, so we define and explain them here.
-Feel free to skip any of these if you know them, or if you want to look them up
-during the discussion above.
+        fig_change_2par(i_range,int_range,i_int_tEQ,'Ki','Kint',sigma)
 
-## Control values and their derivatives
-
-In general, in control theory you want to, well, control some variable. For example
-the position of a spaceship. If you could directly set the value of that variable,
-all would be easy, you'd simply set the desired position (or interpolate between
-the current position and the desired position so as not to bump the passengers too
-much). Unfortunately, one can usually not control the world directly, but instead
-we can only change some _other_ variable, like the speed at which a ship is moving.
-In fact, we can not even set _that_ directly, but we must control the _throttle_ that
-is applied to the ship, which (in our idealized case) corresponds to the "second
-derivative of the position". But what does that mean?
-
-A derivative of a function in time `f(t)` is the _rate of change over time_. So if a
-function `f` has derivative `f'(t) = 5` everywhere, this means that during each unit
-of time the value of `f` increases by 5. So, if your ship moves a velocity of 1 m/s,
-it means that it'll be one meter further every second. The velocity of a ship is the
-first derivative of its position.  
-The same applies to the second derivative, which is called acceleration. An
-acceleration of 1 m/s^2 means that each second, the _velocity_ changes by 1 m/s.
-So if you hold the thruster on the ship, it's going to accelerate at a constant rate,
-meaning it'll be faster and faster. This is very similar to falling, which you are
-probably familiar with.
-
-To make it quicker to see, we have short names for each of these things: `x` for the
-position, `v` for the speed and `T` for thrust. Well, `a` for acceleration, actually,
-but in our spaceship model we'll use thrust. When you start the game, you'll see nice
-little diagrams for each of them, and now you'll understand them, too.
-
-
-
-## Tick-based or stepwise functions
-
-You know, calculus is pretty hard. Functions can do all
-[kinds](https://en.wikipedia.org/wiki/Dirichlet_function)
-[of](https://en.wikipedia.org/wiki/Cantor_function)
-[weird](https://en.wikipedia.org/wiki/Wiener_process)
-[stuff](https://en.wikipedia.org/wiki/Weierstrass_function)
-if you're
-not careful, and doing
-[derivation](https://www.quora.com/What-is-frac-mathrm-d-y-mathrm-d-x-of-y-x-x-x-x-x-x-x-x-x) and
-[integration](https://math.stackexchange.com/questions/223653/weird-and-difficult-integral-sqrt1-frac13x-dx) is definitely not easy in the
-general case.
-
-Luckily, we are not in the general case. Our functions are only defined for specific
-points, which makes taking the derivative and integrals _much_ easier.
-
-### Derivation
-
-Let's assume you have a function that is sampled at specific points in time, and let's
-say that these points are `delta t` units apart. Here's an image of how that looks.
-
-*image of a linear function* 
-
-Here, the derivative is really, really simple. It's:
-
-    f'(x) = ((f(x_2) - f(x_1)) * delta t) / delta t = f(x_2) - f(x_1)
-
-So, any time you need a derivative of a sampled function, simply calculate the difference
-between the data points and you're good.
+Drawing the figures is done with a colorbar chart, provided in matplotlib. 
 
 
-### Integration
+    def fig_change_2par(x,y,z,par1,par2,sigma): 
+        Y,X = np.meshgrid(y,x)
+        fs = 55
+        fig = plt.figure(figsize=(27.5,13.5))
+        ax1 = fig.add_axes([.12,.15, .83, .72])            
+        cax = ax1.pcolor(X,Y,z,cmap='hot_r',vmin=0,vmax=20)
+        ax1.set_title('Varying {0} and  {1} - sigma: {2}'.format(par1,par2,sigma),fontsize=fs)   
+        ax1.tick_params(axis='x',labelsize=fs)
+        ax1.tick_params(axis='y',labelsize=fs)
+        ax1.set_xlabel(par1,fontsize=fs)
+        ax1.set_ylabel(par2,fontsize=fs)
+        ax1.tick_params(axis='x',labelsize=fs)
+        ax1.tick_params(axis='y',labelsize=fs)
+        cbar = fig.colorbar(cax)
+        cbar.ax.tick_params(labelsize=fs)
+        cbar.ax.set_ylabel('time until equilibrium',fontsize=fs)
+        fig.savefig("figuren\\2 par {0} en {1} sigma {2}".format(par1,par2,str(sigma).replace('.',',')))
+        plt.close(fig)
 
-Integration is similarly easy. Since the value of the function is not defined between the
-sampled points, we can do what we want in-between. So let's make it a stepwise function.
+## Task 7
 
-*image of a stepwise function*
+By allowing sigma as parameter, all these functions could serve for task 7 as well. 
 
-Calculating the area under the curve is now... rather easy, isn't it?
+## Task 6
 
-    integral(f, x1, x2) = x1 * delta t
-    
-If you assume that `delta t == 1` it's even easier. Since the integral will only be by a
-constant factor off, that's fine (depending on the use case).
+We created the runVraag6 function to generate figures while running the simulation with applying noise. Here we reused the fig_basius function
 
-To get an integral over more than one interval, simply add the piecewise integrals up.
+    def runVraag6():
+        """
+        Question 6: add random noise to spaceship position 
+        """
+        print('Run and plot some runs with random Gaussian noise')
+        for iteller in range(1,31) :
+            par=GameParameters(1,60,0.0025,0.2,round(math.log10(1+iteller/1000),4))
+            spel=run(game,par)
+            reset(game)
+            fig_basis(spel[0],spel[1],par,iteller)
 
 
+## Running the simulation
+
+The following code starts it all up. Note that the simulation takes quite a long time. On our (pretty fast) pc it runs for nearly 8 hours. You can speed it up to run it within a reasonable timeframe to change resolutieFactor to 1 (line 407 in `game.py`), which results in lower resolution figures. 
+
+    if(not os.path.exists("figuren")):
+        os.mkdir("figuren")
+
+    runVraag2()
+    runVraag5a(0)
+    runVraag5a(0.0025)
+    runVraag5b(0)
+    runVraag5b(0.0025)
+    runVraag6()
